@@ -11,4 +11,6 @@ dnl Requires platforms that use pkg-config
 PKG_CHECK_MODULES([GL],[gl])
 PKG_CHECK_MODULES([GLU],[glu])
 
+AC_CHECK_LIB([m],[fmod])
+
 AC_OUTPUT
