@@ -1,0 +1,31 @@
+# object files
+*.[ao]
+*.so
+*.dSYM/
+
+# editor stuff
+*~
+.*.swp
+
+# autotools stuff
+.deps/
+Makefile.in
+aclocal.m4
+autom4te.cache/
+config.guess
+config.h
+config.h.in
+config.log
+config.status
+config.sub
+configure
+depcomp
+install-sh
+missing
+stamp-h1
+.dirstamp
+
+# Java stuff
+*.class
+*.ser
+.nb-gradle/private/
