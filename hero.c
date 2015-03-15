@@ -73,7 +73,6 @@ static void setup_gl(void)
 		warn("Configuring VSync is not supported!\n");
 	}
 
-	glCullFace(GL_BACK);
 	// orange: glClearColor(1.0, 0.75, 0.0, 1.0);
 	glClearColor(0.0, 0.0, 0.0, 1.0);
 }
@@ -170,32 +169,38 @@ static void game_paint(void)
 
 	glScissor(state->win_x, state->win_y, state->win_w, state->win_h);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	/*
+	glCullFace(GL_BACK);
+	glEnable(GL_CULL_FACE);
+	*/
 
 	/* setup projection matrix */
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	GLdouble aspect = (double)config.width / (double)config.height;
-	// TODO: this is all messed up, sorely needs to be fixed
-	gluPerspective(90.0, aspect, 0.1, 10.0);
+	double nearest = 0.125; /* how close you can get before it's clipped. */
+	glFrustum(nearest, -nearest, -nearest, nearest, nearest, 1000.0);
 
 	/* setup world coordinates */
 	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	glRotatef(state->player_facing, 0.0, 1.0, 0.0);
-	glTranslatef(-state->player_x, -state->player_height, state->player_y);
 
 #if 0
 	/* Test code */
+	glLoadIdentity();
 	glBegin(GL_TRIANGLE_STRIP);
 	glColor3f(0.0, 1.0, 0.0);
-	glVertex3f(1.0, 0.0, -1.0);
+	glVertex3f(0.0625, 0.0, -1.0);
 	glColor3f(1.0, 0.0, 0.0);
-	glVertex3f(0.0, -1.0, -1.0);
+	glVertex3f(0.0, -0.0625, -1.0);
 	glColor3f(0.0, 0.0, 1.0);
 	glVertex3f(0.0, 0.0, -1.0);
 	glEnd();
 #endif
 
+	glLoadIdentity();
+	glRotatef(state->player_facing, 0.0, 1.0, 0.0);
+	glTranslatef(-state->player_x, -state->player_height, state->player_y);
 	sector_draw(state, &dummy_sector);
 }
 
@@ -397,7 +402,7 @@ int main(int argc, char **argv)
 	/* put us in the center of the map */
 	sector_find_center(&dummy_sector,
 		&main_state->player_x, &main_state->player_y);
-	main_state->player_height = 0.75;
+	main_state->player_height = 1.0;
 
 	/* Main event loop */
 	main_state->last_tick = SDL_GetTicks();
