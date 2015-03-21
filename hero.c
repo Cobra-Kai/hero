@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <math.h>
 #define GL_GLEXT_PROTOTYPES
 #include <SDL.h>
 #include <GL/gl.h>
@@ -271,8 +272,13 @@ static void game_process_ticks(SDL_Window *win)
 	SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
 		"elapsed=%d ms\n", elapsed);
 
-	double player_speed = 10.0; /* invert speed: 10 ms per 1 unit */
-	double player_turn_speed = 1.0; /* 1 ms per degree = 1000 deg / sec */
+	double player_speed = 10.0; /* reciprocal speed: 10 ms per 1 unit */
+	double player_turn_speed = 0.25;
+
+	double theta = state->player_facing * M_PI / 180.0;
+	double r = elapsed / player_speed;
+	double ax = r * sin(theta);
+	double ay = r * cos(theta);
 
 	/*
 	SDL_Log("key state: up=%d down=%d left=%d right=%d\n",
@@ -281,26 +287,26 @@ static void game_process_ticks(SDL_Window *win)
 	*/
 	// TODO: handle wall collision
 	if (state->act.down) {
-		// TODO: translate direction according to player_facing
-		state->player_y -= elapsed / player_speed;
+		state->player_y -= ay;
+		state->player_x -= ax;
 	}
 	if (state->act.up) {
-		// TODO: translate direction according to player_facing
-		state->player_y += elapsed / player_speed;
+		state->player_y += ay;
+		state->player_x += ax;
 	}
 	if (state->act.left) {
-		// TODO: translate direction according to player_facing
-		state->player_x -= elapsed / player_speed;
+		state->player_y -= ax;
+		state->player_x -= ay;
 	}
 	if (state->act.right) {
-		// TODO: translate direction according to player_facing
-		state->player_x += elapsed / player_speed;
+		state->player_y += ax;
+		state->player_x += ay;
 	}
 	if (state->act.turn_left) {
-		state->player_facing -= elapsed / player_turn_speed;
+		state->player_facing += elapsed / player_turn_speed;
 	}
 	if (state->act.turn_right) {
-		state->player_facing += elapsed / player_turn_speed;
+		state->player_facing -= elapsed / player_turn_speed;
 	}
 
 	/* put player_facing between 0 and 360. [0.0, 360.0) */
