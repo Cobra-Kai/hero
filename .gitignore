@@ -29,3 +29,9 @@ stamp-h1
 *.class
 *.ser
 .nb-gradle/private/
+
+# cmake stuff
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
