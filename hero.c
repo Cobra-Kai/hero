@@ -20,12 +20,6 @@ struct config {
 
 struct game_state {
 	GLuint win_x, win_y, win_w, win_h; /* used to crop to preserve aspect */
-	struct act {
-		bool up, down, left, right;
-		bool turn_left, turn_right;
-		bool fly_up, fly_down;
-		bool look_up, look_down;
-	} act; /* actions */
 	GLdouble player_x, player_y; /* current player position */
 	GLdouble player_z; /* non-zero if we're flying, added to height */
 	GLdouble player_facing, player_height;
@@ -33,6 +27,14 @@ struct game_state {
 	unsigned player_sector;
 	Uint32 last_tick;
 	bool text_input;
+	/** player input **/
+	struct act {
+		bool up, down, left, right;
+		bool turn_left, turn_right;
+		bool fly_up, fly_down;
+		bool look_up, look_down;
+	} act; /* actions */
+	SDL_GameController *gamepad;
 };
 
 /* global configuration */
@@ -304,6 +306,82 @@ static void game_process_key(bool down, SDL_Keysym keysym, SDL_Window *win)
 	}
 }
 
+/* process input from gamepad/joystick */
+static void game_process_gamepad_button(bool down,
+	SDL_ControllerButtonEvent *cbutton, SDL_Window *win)
+{
+	SDL_assert(cbutton != NULL);
+	SDL_assert(win != NULL);
+	if (!cbutton || !win)
+		return;
+	struct game_state *state = SDL_GetWindowData(win, "game");
+	SDL_assert(state != NULL);
+	switch ((SDL_GameControllerButton)cbutton->button) {
+	case SDL_CONTROLLER_BUTTON_DPAD_UP:
+		state->act.up = down;
+		break;
+	case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+		state->act.down = down;
+		break;
+	case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+		state->act.left = down;
+		break;
+	case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+		state->act.right = down;
+		break;
+	case SDL_CONTROLLER_BUTTON_Y:
+		state->act.look_up = down;
+		break;
+	case SDL_CONTROLLER_BUTTON_A:
+		state->act.look_down = down;
+		break;
+	case SDL_CONTROLLER_BUTTON_X:
+		state->act.fly_up = down;
+		break;
+	case SDL_CONTROLLER_BUTTON_B:
+		state->act.fly_down = down;
+		break;
+	}
+}
+
+/* TODO: turn inputs into a vector instead of treating it a digital input. */
+static void game_process_gamepad_axis(SDL_ControllerAxisEvent *caxis,
+	SDL_Window *win)
+{
+	SDL_assert(caxis != NULL);
+	SDL_assert(win != NULL);
+	if (!caxis || !win)
+		return;
+	struct game_state *state = SDL_GetWindowData(win, "game");
+	SDL_assert(state != NULL);
+	switch ((SDL_GameControllerAxis)caxis->axis) {
+	case SDL_CONTROLLER_AXIS_LEFTX:
+		if (caxis->value < -10) {
+			state->act.turn_left = true;
+			state->act.turn_right = false;
+		} else if (caxis->value > 10) {
+			state->act.turn_left = false;
+			state->act.turn_right = true;
+		} else {
+			state->act.turn_left = false;
+			state->act.turn_right = false;
+		}
+		break;
+	case SDL_CONTROLLER_AXIS_LEFTY:
+		if (caxis->value < -10) {
+			state->act.up = true;
+			state->act.down = false;
+		} else if (caxis->value > 10) {
+			state->act.up = false;
+			state->act.down = true;
+		} else {
+			state->act.up = false;
+			state->act.down = false;
+		}
+		break;
+	}
+}
+
 static void game_process_ticks(SDL_Window *win)
 {
 	struct game_state *state = SDL_GetWindowData(win, "game");
@@ -466,6 +544,20 @@ int main(int argc, char **argv)
 	main_state->win_h = height;
 	SDL_SetWindowData(main_window, "game", main_state);
 
+	/* Configure the player gamepad */
+	if (SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt") == -1)
+		warn("gamecontrollerdb.txt:%s\n", SDL_GetError());
+	if (SDL_NumJoysticks() > 0) {
+		main_state->gamepad = SDL_GameControllerOpen(0);
+	}
+
+	if (!main_state->gamepad) {
+		warn("No joysticks found\n");
+	} else {
+		SDL_Log("controller: %s\n",
+			SDL_GameControllerName(main_state->gamepad));
+	}
+
 	/** GL related setup **/
 	SDL_GLContext main_context = SDL_GL_CreateContext(main_window);
 	if (!main_context)
@@ -479,6 +571,7 @@ int main(int argc, char **argv)
 	main_state->player_height = 1.0;
 
 	/* Main event loop */
+	SDL_GameControllerEventState(SDL_ENABLE);
 	main_state->last_tick = SDL_GetTicks();
 	keep_going = true;
 	while (keep_going) {
@@ -506,6 +599,18 @@ int main(int argc, char **argv)
 				game_process_key(true, ev.key.keysym,
 					SDL_GetWindowFromID(ev.key.windowID));
 				break;
+			case SDL_CONTROLLERBUTTONDOWN:
+				game_process_gamepad_button(true, &ev.cbutton,
+					main_window); // TODO: look up window
+				break;
+			case SDL_CONTROLLERBUTTONUP:
+				game_process_gamepad_button(false, &ev.cbutton,
+					main_window); // TODO: look up window
+				break;
+			case SDL_CONTROLLERAXISMOTION:
+				game_process_gamepad_axis(&ev.caxis,
+					main_window); // TODO: look up window
+				break;
 			}
 		}
 
@@ -518,6 +623,9 @@ int main(int argc, char **argv)
 		game_paint();
 		SDL_GL_SwapWindow(main_window);
 	}
+
+	SDL_GameControllerClose(main_state->gamepad);
+	main_state->gamepad = NULL;
 
 	SDL_DestroyWindow(main_window);
 	SDL_Quit();
