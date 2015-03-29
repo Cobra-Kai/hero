@@ -10,6 +10,8 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
+#define ARRAY_SIZE(a) (sizeof (a) / sizeof *(a))
+
 struct config {
 	int width, height;
 	bool verbose; /* enable to turn on extra logging */
@@ -145,7 +147,7 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec)
 		const struct sector_vertex *cur = &sec->sides_xy[i];
 		// TODO: don't use immediate mode!
 		glBegin(GL_TRIANGLE_STRIP);
-		glColor3fv(colors[i]);
+		glColor3fv(colors[i % ARRAY_SIZE(colors)]);
 		/*
 		glVertex3f(last->x, last->y, ceil_height);
 		glVertex3f(cur->x, cur->y, ceil_height);
