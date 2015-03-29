@@ -23,9 +23,14 @@ struct game_state {
 	struct act {
 		bool up, down, left, right;
 		bool turn_left, turn_right;
+		bool fly_up, fly_down;
+		bool look_up, look_down;
 	} act; /* actions */
 	GLdouble player_x, player_y; /* current player position */
+	GLdouble player_z; /* non-zero if we're flying, added to height */
 	GLdouble player_facing, player_height;
+	GLdouble player_tilt; /* for look up/down */
+	unsigned player_sector;
 	Uint32 last_tick;
 	bool text_input;
 };
@@ -94,19 +99,38 @@ struct map_sector {
 	struct sector_vertex sides_xy[MAX_SIDES]; /* in clockwise order */
 };
 
-const struct map_sector dummy_sector = {
-	.floor_height = 0.0,
-	.ceil_height = 2.0,
-	.num_sides = 4,
-	.sides_xy[0].x = 1,
-	.sides_xy[0].y = 2,
-	.sides_xy[1].x = 5,
-	.sides_xy[1].y = 7,
-	.sides_xy[2].x = 5,
-	.sides_xy[2].y = 11,
-	.sides_xy[3].x = 1,
-	.sides_xy[3].y = 16,
-};
+const struct map_sector *sector_get(unsigned num)
+{
+	static const struct map_sector dummy_sector0 = {
+		.floor_height = 0.0,
+		.ceil_height = 2.0,
+		.num_sides = 4,
+		.sides_xy = {
+			 { 1, 2, },
+			 { 5, 7, },
+			 { 5, 11, },
+			 { 1, 16, },
+		},
+	};
+	static const struct map_sector dummy_sector1 = {
+		.floor_height = 0.0,
+		.ceil_height = 2.0,
+		.num_sides = 4,
+		.sides_xy = {
+			 { 1, 2, },
+			 { 5, 7, },
+			 { 5, 11, },
+			 { 1, 16, },
+		},
+	};
+	switch (num) {
+	case 0:
+		return &dummy_sector0;
+	case 1:
+		return &dummy_sector1;
+	}
+	return NULL;
+}
 
 /* calculates the center of a sector through averaging every vertex. */
 static void sector_find_center(const struct map_sector *sec, GLdouble *x, GLdouble *y)
@@ -129,6 +153,8 @@ static void sector_find_center(const struct map_sector *sec, GLdouble *x, GLdoub
 /* draw one sector */
 static void sector_draw(struct game_state *state, const struct map_sector *sec)
 {
+	if (!sec)
+		return; /* TODO: maybe draw some empty void? */
 	unsigned i;
 	const struct sector_vertex *last = &sec->sides_xy[sec->num_sides - 1];
 	GLfloat floor_height = sec->floor_height;
@@ -202,9 +228,11 @@ static void game_paint(void)
 #endif
 
 	glLoadIdentity();
+	glRotatef(state->player_tilt, -1.0, 0.0, 0.0);
 	glRotatef(state->player_facing, 0.0, 1.0, 0.0);
-	glTranslatef(-state->player_x, -state->player_height, state->player_y);
-	sector_draw(state, &dummy_sector);
+	glTranslatef(-state->player_x, -state->player_height - state->player_z,
+		state->player_y);
+	sector_draw(state, sector_get(state->player_sector));
 }
 
 /** MVC: Controller - process inputs and alter the model over time. **/
@@ -216,25 +244,37 @@ static void game_process_key(bool down, SDL_Keysym keysym, SDL_Window *win)
 	SDL_assert(state != NULL);
 
 	switch (keysym.sym) {
-	case SDLK_e:
+	case SDLK_HOME: /* Fly Up */
+		state->act.fly_up = down;
+		break;
+	case SDLK_END: /* Fly Down */
+		state->act.fly_down = down;
+		break;
+	case SDLK_PAGEUP: /* Look Up */
+		state->act.look_up = down;
+		break;
+	case SDLK_PAGEDOWN: /* Look Down */
+		state->act.look_down = down;
+		break;
 	case SDLK_UP:
+	case SDLK_e:
 		state->act.up = down;
 		break;
-	case SDLK_d:
 	case SDLK_DOWN:
+	case SDLK_d:
 		state->act.down = down;
 		break;
 	case SDLK_w:
-	case SDLK_LEFT:
 		state->act.left = down;
 		break;
 	case SDLK_r:
-	case SDLK_RIGHT:
 		state->act.right = down;
 		break;
+	case SDLK_LEFT:
 	case SDLK_s:
 		state->act.turn_left = down;
 		break;
+	case SDLK_RIGHT:
 	case SDLK_f:
 		state->act.turn_right = down;
 		break;
@@ -310,6 +350,18 @@ static void game_process_ticks(SDL_Window *win)
 	if (state->act.turn_right) {
 		state->player_facing -= elapsed / player_turn_speed;
 	}
+	if (state->act.fly_up) {
+		state->player_z += r;
+	}
+	if (state->act.fly_down) {
+		state->player_z -= r;
+	}
+	if (state->act.look_up) {
+		state->player_tilt += elapsed / player_turn_speed;
+	}
+	if (state->act.look_down) {
+		state->player_tilt -= elapsed / player_turn_speed;
+	}
 
 	/* put player_facing between 0 and 360. [0.0, 360.0) */
 	state->player_facing = fmod(state->player_facing, 360.0);
@@ -362,6 +414,19 @@ static void parse_args(int argc, char **argv)
 	}
 }
 
+/* Keyboard controls:
+ *
+ * Move_Forward		UP	E
+ * Move_Backward	DOWN	D
+ * Turn_Left		LEFT	S
+ * Turn_Right		RIGHT	F
+ * Strafe_Left			W
+ * Strafe_Right			R
+ * Look_Up		PGUP
+ * Look_Down		PGDN
+ * Fly_Up		HOME
+ * Fly_Down		END
+ */
 int main(int argc, char **argv)
 {
 	parse_args(argc, argv);
@@ -407,8 +472,9 @@ int main(int argc, char **argv)
 		die("SDL could not create GL context! (%s)\n", SDL_GetError());
 	setup_gl();
 
-	/* put us in the center of the map */
-	sector_find_center(&dummy_sector,
+	/* put us in the center of the map of the 0th sector */
+	main_state->player_sector = 0;
+	sector_find_center(sector_get(main_state->player_sector),
 		&main_state->player_x, &main_state->player_y);
 	main_state->player_height = 1.0;
 
