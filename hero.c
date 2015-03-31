@@ -73,8 +73,6 @@ static void warn(const char *fmt, ...)
 
 static void setup_gl(void)
 {
-	SDL_Window *win = SDL_GL_GetCurrentWindow();
-
 	/* setup the config.use_vsync option */
 	if (SDL_GL_GetSwapInterval() != -1) {
 		if (SDL_GL_SetSwapInterval(config.use_vsync ? 1 : 0) < 0)
@@ -98,7 +96,8 @@ struct sector_vertex {
 struct map_sector {
 	GLfloat floor_height, ceil_height;
 	unsigned num_sides;
-	struct sector_vertex sides_xy[MAX_SIDES]; /* in clockwise order */
+	/* must be in counter-clockwise order */
+	struct sector_vertex sides_xy[MAX_SIDES];
 };
 
 const struct map_sector *sector_get(unsigned num)
@@ -108,10 +107,10 @@ const struct map_sector *sector_get(unsigned num)
 		.ceil_height = 2.0,
 		.num_sides = 4,
 		.sides_xy = {
-			 { 1, 2, },
-			 { 5, 7, },
-			 { 5, 11, },
 			 { 1, 16, },
+			 { 5, 11, },
+			 { 5, 7, },
+			 { 1, 2, },
 		},
 	};
 	static const struct map_sector dummy_sector1 = {
@@ -119,10 +118,10 @@ const struct map_sector *sector_get(unsigned num)
 		.ceil_height = 2.0,
 		.num_sides = 4,
 		.sides_xy = {
-			 { 1, 2, },
-			 { 5, 7, },
-			 { 5, 11, },
 			 { 1, 16, },
+			 { 5, 11, },
+			 { 5, 7, },
+			 { 1, 2, },
 		},
 	};
 	switch (num) {
@@ -176,12 +175,6 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec)
 		// TODO: don't use immediate mode!
 		glBegin(GL_TRIANGLE_STRIP);
 		glColor3fv(colors[i % ARRAY_SIZE(colors)]);
-		/*
-		glVertex3f(last->x, last->y, ceil_height);
-		glVertex3f(cur->x, cur->y, ceil_height);
-		glVertex3f(last->x, last->y, floor_height);
-		glVertex3f(cur->x, cur->y, floor_height);
-		*/
 		glVertex3f(last->x, ceil_height, -last->y);
 		glVertex3f(cur->x, ceil_height, -cur->y);
 		glVertex3f(last->x, floor_height, -last->y);
@@ -202,10 +195,8 @@ static void game_paint(void)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
-	/*
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
-	*/
 
 	/* setup projection matrix */
 	glMatrixMode(GL_PROJECTION);
