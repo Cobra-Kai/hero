@@ -98,7 +98,11 @@ struct map_sector {
 	unsigned num_sides;
 	/* must be in counter-clockwise order */
 	struct sector_vertex sides_xy[MAX_SIDES];
+	unsigned short destination_sector[MAX_SIDES]; /* portal != 0xffff */
 };
+
+
+#define SECTOR_NONE (0xffff)
 
 const struct map_sector *sector_get(unsigned num)
 {
@@ -107,22 +111,26 @@ const struct map_sector *sector_get(unsigned num)
 		.ceil_height = 2.0,
 		.num_sides = 4,
 		.sides_xy = {
-			 { 1, 16, },
-			 { 5, 11, },
-			 { 5, 7, },
-			 { 1, 2, },
+			{ 1, 16, },
+			{ 5, 11, },
+			{ 5, 7, },
+			{ 1, 2, },
 		},
+		.destination_sector =
+			{ SECTOR_NONE, SECTOR_NONE, SECTOR_NONE, 1, },
 	};
 	static const struct map_sector dummy_sector1 = {
 		.floor_height = 0.0,
 		.ceil_height = 2.0,
 		.num_sides = 4,
 		.sides_xy = {
-			 { 1, 16, },
-			 { 5, 11, },
-			 { 5, 7, },
-			 { 1, 2, },
+			{ 5, 7, },
+			{ 10, 1, },
+			{ 8, 6, },
+			{ 1, 2, },
 		},
+		.destination_sector =
+			{ 0, SECTOR_NONE, SECTOR_NONE, SECTOR_NONE, },
 	};
 	switch (num) {
 	case 0:
@@ -152,8 +160,11 @@ static void sector_find_center(const struct map_sector *sec, GLdouble *x, GLdoub
 /** MVC: View - take the model and show it **/
 
 /* draw one sector */
-static void sector_draw(struct game_state *state, const struct map_sector *sec)
+static void sector_draw(struct game_state *state, const struct map_sector *sec, int ttl)
 {
+	/* limit our depth */
+	if (ttl < 0)
+		return;
 	if (!sec)
 		return; /* TODO: maybe draw some empty void? */
 	unsigned i;
@@ -172,16 +183,40 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec)
 
 	for (i = 0; i < sec->num_sides; i++) {
 		const struct sector_vertex *cur = &sec->sides_xy[i];
-		// TODO: don't use immediate mode!
-		glBegin(GL_TRIANGLE_STRIP);
-		glColor3fv(colors[i % ARRAY_SIZE(colors)]);
-		glVertex3f(last->x, ceil_height, -last->y);
-		glVertex3f(cur->x, ceil_height, -cur->y);
-		glVertex3f(last->x, floor_height, -last->y);
-		glVertex3f(cur->x, floor_height, -cur->y);
-		glEnd();
+		unsigned short destination_sector = sec->destination_sector[i];
+		if (destination_sector == SECTOR_NONE) {
+			// TODO: don't use immediate mode!
+			glBegin(GL_TRIANGLE_STRIP);
+			glColor3fv(colors[i % ARRAY_SIZE(colors)]);
+			glVertex3f(last->x, ceil_height, -last->y);
+			glVertex3f(cur->x, ceil_height, -cur->y);
+			glVertex3f(last->x, floor_height, -last->y);
+			glVertex3f(cur->x, floor_height, -cur->y);
+			glEnd();
+		} else {
+			// debug("portal %d = %hu\n", i, destination_sector);
+			const struct map_sector *newsec =
+				sector_get(destination_sector);
+			/* let the depth buffer mask off the room */
+			// TODO: optimize with a scissor test of the wall's bbox
+			// TODO: add additional modelview matrix
+			/* recurse into the portal */
+			sector_draw(state, newsec, ttl - 1);
+		}
 		last = cur;
 	}
+}
+
+static void sector_print(const struct map_sector *sec)
+{
+	int i;
+
+	// TODO: print more information
+	printf("dest:");
+	for (i = 0; i < sec->num_sides; i++) {
+		printf(" %hx", sec->destination_sector[i]);
+	}
+	printf("\n");
 }
 
 /* TODO: draw all sectors visible to player's camera */
@@ -225,7 +260,8 @@ static void game_paint(void)
 	glRotatef(state->player_facing, 0.0, 1.0, 0.0);
 	glTranslatef(-state->player_x, -state->player_height - state->player_z,
 		state->player_y);
-	sector_draw(state, sector_get(state->player_sector));
+	/* draw up to 10 sectors deep */
+	sector_draw(state, sector_get(state->player_sector), 10);
 }
 
 /** MVC: Controller - process inputs and alter the model over time. **/
@@ -560,6 +596,9 @@ int main(int argc, char **argv)
 	sector_find_center(sector_get(main_state->player_sector),
 		&main_state->player_x, &main_state->player_y);
 	main_state->player_height = 1.0;
+
+	/* print the starting sector */
+	sector_print(sector_get(main_state->player_sector));
 
 	/* Main event loop */
 	SDL_GameControllerEventState(SDL_ENABLE);
