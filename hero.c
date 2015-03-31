@@ -98,6 +98,7 @@ struct map_sector {
 	unsigned num_sides;
 	/* must be in counter-clockwise order */
 	struct sector_vertex sides_xy[MAX_SIDES];
+	unsigned char color[MAX_SIDES];
 	unsigned short destination_sector[MAX_SIDES]; /* portal != 0xffff */
 };
 
@@ -118,6 +119,7 @@ const struct map_sector *sector_get(unsigned num)
 		},
 		.destination_sector =
 			{ SECTOR_NONE, SECTOR_NONE, SECTOR_NONE, 1, },
+		.color = { 0, 1, 2, 3 },
 	};
 	static const struct map_sector dummy_sector1 = {
 		.floor_height = 0.0,
@@ -131,6 +133,7 @@ const struct map_sector *sector_get(unsigned num)
 		},
 		.destination_sector =
 			{ 0, SECTOR_NONE, SECTOR_NONE, SECTOR_NONE, },
+		.color = { 4, 5, 6, 7 },
 	};
 	switch (num) {
 	case 0:
@@ -171,7 +174,7 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec, 
 	const struct sector_vertex *last = &sec->sides_xy[sec->num_sides - 1];
 	GLfloat floor_height = sec->floor_height;
 	GLfloat ceil_height = sec->ceil_height;
-	const GLfloat colors[7][3] = {
+	const GLfloat colors[][3] = {
 		{ 1.0, 1.0, 1.0, },
 		{ 0.0, 1.0, 1.0, },
 		{ 1.0, 0.0, 1.0, },
@@ -179,6 +182,14 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec, 
 		{ 1.0, 0.0, 0.0, },
 		{ 0.0, 1.0, 0.0, },
 		{ 0.0, 0.0, 1.0, },
+
+		{ 0.5, 0.5, 0.5, },
+		{ 0.0, 0.5, 0.5, },
+		{ 0.5, 0.0, 0.5, },
+		{ 0.5, 0.5, 0.0, },
+		{ 0.5, 0.0, 0.0, },
+		{ 0.0, 0.5, 0.0, },
+		{ 0.0, 0.0, 0.5, },
 	};
 
 	for (i = 0; i < sec->num_sides; i++) {
@@ -187,7 +198,7 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec, 
 		if (destination_sector == SECTOR_NONE) {
 			// TODO: don't use immediate mode!
 			glBegin(GL_TRIANGLE_STRIP);
-			glColor3fv(colors[i % ARRAY_SIZE(colors)]);
+			glColor3fv(colors[sec->color[i] % ARRAY_SIZE(colors)]);
 			glVertex3f(last->x, ceil_height, -last->y);
 			glVertex3f(cur->x, ceil_height, -cur->y);
 			glVertex3f(last->x, floor_height, -last->y);
@@ -209,7 +220,7 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec, 
 
 static void sector_print(const struct map_sector *sec)
 {
-	int i;
+	unsigned i;
 
 	// TODO: print more information
 	printf("dest:");
