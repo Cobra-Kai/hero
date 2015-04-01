@@ -445,20 +445,24 @@ static void game_process_ticks(SDL_Window *win)
 	*/
 	// TODO: handle wall collision
 	if (state->act.down) {
-		state->player_y -= ay;
 		state->player_x -= ax;
+		state->player_y -= ay;
 	}
 	if (state->act.up) {
-		state->player_y += ay;
 		state->player_x += ax;
+		state->player_y += ay;
 	}
 	if (state->act.left) {
-		state->player_y -= ax;
-		state->player_x -= ay;
+		double ax_left = r * sin(theta + M_PI / 2);
+		double ay_left = r * cos(theta + M_PI / 2);
+		state->player_x += ax_left;
+		state->player_y += ay_left;
 	}
 	if (state->act.right) {
-		state->player_y += ax;
-		state->player_x += ay;
+		double ax_right = r * sin(theta - M_PI / 2);
+		double ay_right = r * cos(theta - M_PI / 2);
+		state->player_x += ax_right;
+		state->player_y += ay_right;
 	}
 	if (state->act.turn_left) {
 		state->player_facing += elapsed / player_turn_speed;
