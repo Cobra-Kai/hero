@@ -126,13 +126,13 @@ const struct map_sector *sector_get(unsigned num)
 		.ceil_height = 2.0,
 		.num_sides = 4,
 		.sides_xy = {
-			{ 5, 7, },
-			{ 10, 1, },
 			{ 8, 6, },
+			{ 10, 1, },
 			{ 1, 2, },
+			{ 5, 7, },
 		},
 		.destination_sector =
-			{ 0, SECTOR_NONE, SECTOR_NONE, SECTOR_NONE, },
+			{ SECTOR_NONE, SECTOR_NONE, SECTOR_NONE, 0, },
 		.color = { 4, 5, 6, 7 },
 	};
 	switch (num) {
@@ -252,19 +252,6 @@ static void game_paint(void)
 
 	/* setup world coordinates */
 	glMatrixMode(GL_MODELVIEW);
-
-#if 0
-	/* Test code */
-	glLoadIdentity();
-	glBegin(GL_TRIANGLE_STRIP);
-	glColor3f(0.0, 1.0, 0.0);
-	glVertex3f(0.0625, 0.0, -1.0);
-	glColor3f(1.0, 0.0, 0.0);
-	glVertex3f(0.0, -0.0625, -1.0);
-	glColor3f(0.0, 0.0, 1.0);
-	glVertex3f(0.0, 0.0, -1.0);
-	glEnd();
-#endif
 
 	glLoadIdentity();
 	glRotatef(state->player_tilt, -1.0, 0.0, 0.0);
@@ -606,8 +593,8 @@ int main(int argc, char **argv)
 		die("SDL could not create GL context! (%s)\n", SDL_GetError());
 	setup_gl();
 
-	/* put us in the center of the map of the 0th sector */
-	main_state->player_sector = 0;
+	/* put us in the center of the map of the 1st sector */
+	main_state->player_sector = 1;
 	sector_find_center(sector_get(main_state->player_sector),
 		&main_state->player_x, &main_state->player_y);
 	main_state->player_height = 1.0;
