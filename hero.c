@@ -9,12 +9,16 @@
 #include <SDL.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
+#include <GL/glu.h>
 
 #define ARRAY_SIZE(a) (sizeof (a) / sizeof *(a))
 
+struct world *world;
+
 struct config {
 	int width, height;
-	bool verbose; /* enable to turn on extra logging */
+	bool verbose; /* enable to turn on all logging */
+	bool debug; /* enable to turn on debug logging */
 	bool use_vsync;
 };
 
@@ -41,6 +45,7 @@ struct game_state {
 static struct config config = {
 	.width = 960, .height = 540,
 	.verbose = false,
+	.debug = false,
 	.use_vsync = false,
 };
 
@@ -70,6 +75,94 @@ static void warn(const char *fmt, ...)
 		fmt, ap);
 	va_end(ap);
 }
+
+static void debug(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	SDL_LogMessageV(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_DEBUG,
+		fmt, ap);
+	va_end(ap);
+}
+
+static void verbose(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	SDL_LogMessageV(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_VERBOSE,
+		fmt, ap);
+	va_end(ap);
+}
+
+#if 0 /* some debug code */
+
+static inline void *My_GetWindowData(SDL_Window *win, const char *tag)
+{
+	debug("%s():tag=%s\n", __func__, tag);
+	return SDL_GetWindowData(win, tag);
+}
+
+static inline void *My_SetWindowData(SDL_Window *win, const char *tag, void *p)
+{
+	debug("%s():tag=%s ptr=%p\n", __func__, tag, p);
+	return SDL_SetWindowData(win, tag, p);
+}
+
+#define SDL_GetWindowData My_GetWindowData
+#define SDL_SetWindowData My_SetWindowData
+#endif
+
+/** Texture loading routines **/
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+/* load an image from a file, allocate a new texture, copy image into texture.
+ * pass level=-1 to generate mipmaps, else LOD=level and must load mipmaps manually.
+ * return width and height to info on the aspect ratio for NPOT textures.
+ * Operates on the currently bound texture, example:
+	glGenTextures(tex_max, tex_ids);
+	for (i = 0; i < tex_max; i++) {
+		glBindTexture(GL_TEXTURE_2D, tex_ids[i]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+		e = texture_load(filename, -1, GL_RGBA, &width, &height, 0, true);
+		assert(e == 0);
+	}
+ */
+int texture_load(const char *filename, GLint level, GLint internalFormat, int *width, int *height, GLint border, bool use_alpha)
+{
+	int w, h, comps;
+	unsigned char *data = stbi_load(filename, &w, &h, &comps, use_alpha ? 4 : 3);
+	if (!data) {
+		warn("%s:error loading:%s\n", filename, stbi_failure_reason());
+		return -1;
+	}
+
+	verbose("%s:%d:loaded %dx%d\n", filename, level, w, h);
+
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	// TODO: What to do with not-power-of-2 textures?
+	if (level >= 0) {
+		glTexImage2D(GL_TEXTURE_2D, level, internalFormat, w, h, border,
+			use_alpha ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, data);
+	} else {
+		gluBuild2DMipmaps(GL_TEXTURE_2D, internalFormat, w, h,
+			use_alpha ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, data);
+	}
+	stbi_image_free(data);
+
+	if (width)
+		*width = w;
+	if (height)
+		*height = h;
+
+	return 0;
+}
+
+/** GL setup & initialization **/
 
 static void setup_gl(void)
 {
@@ -101,7 +194,6 @@ struct map_sector {
 	unsigned char color[MAX_SIDES];
 	unsigned short destination_sector[MAX_SIDES]; /* portal != 0xffff */
 };
-
 
 #define SECTOR_NONE (0xffff)
 
@@ -160,6 +252,47 @@ static void sector_find_center(const struct map_sector *sec, GLdouble *x, GLdoub
 		*y = total_y / sec->num_sides;
 }
 
+struct world {
+	unsigned num_textures;
+	GLuint *tex_ids;
+};
+
+struct world *world_new(void)
+{
+	// TODO: don't hard code these filenames
+	const char *texfiles[] = {
+		"assets/461223101.jpg",
+		"assets/461223102.jpg",
+		"assets/461223103.jpg",
+		"assets/461223104.jpg",
+		"assets/461223105.jpg",
+	};
+	const char tex_max = ARRAY_SIZE(texfiles);
+
+	struct world *world = calloc(1, sizeof(*world));
+	world->num_textures = tex_max;
+	world->tex_ids = calloc(tex_max, sizeof(*world->tex_ids));
+
+	glGenTextures(tex_max, world->tex_ids);
+	debug("%s():%d:error=%#x\n", __func__, __LINE__, glGetError());
+	int i;
+	for (i = 0; i < tex_max; i++) {
+		debug("Binding texture %d\n", world->tex_ids[i]);
+		glBindTexture(GL_TEXTURE_2D, world->tex_ids[i]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+		int width, height;
+		int e = texture_load(texfiles[i], -1, GL_RGBA, &width, &height, 0, false);
+		assert(e == 0);
+		verbose("%s:texture=%dx%d\n", texfiles[i], width, height);
+	}
+
+	return world;
+}
+
 /** MVC: View - take the model and show it **/
 
 /* draw one sector */
@@ -197,13 +330,29 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec, 
 		unsigned short destination_sector = sec->destination_sector[i];
 		if (destination_sector == SECTOR_NONE) {
 			// TODO: don't use immediate mode!
+#if 1 /* use textures */
+			glBindTexture(GL_TEXTURE_2D, world->tex_ids[i % world->num_textures]);
+			glEnable(GL_TEXTURE_2D);
 			glBegin(GL_TRIANGLE_STRIP);
+#endif
+#if 0 /* use colors */
 			glColor3fv(colors[sec->color[i] % ARRAY_SIZE(colors)]);
+#endif
+			/* find the length of the wall */
+			GLfloat x = last->x - cur->x;
+			GLfloat y = last->y - cur->y;
+			GLfloat length = sqrt(x*x + y*y);
+			/* draw simple repeating texture coordinates for a wall texture */
+			glTexCoord2f(length, ceil_height);
 			glVertex3f(last->x, ceil_height, -last->y);
+			glTexCoord2f(0.0, ceil_height);
 			glVertex3f(cur->x, ceil_height, -cur->y);
+			glTexCoord2f(length, floor_height);
 			glVertex3f(last->x, floor_height, -last->y);
+			glTexCoord2f(0.0, floor_height);
 			glVertex3f(cur->x, floor_height, -cur->y);
 			glEnd();
+			glEnable(GL_TEXTURE_2D);
 		} else {
 			// debug("portal %d = %hu\n", i, destination_sector);
 			const struct map_sector *newsec =
@@ -223,11 +372,11 @@ static void sector_print(const struct map_sector *sec)
 	unsigned i;
 
 	// TODO: print more information
-	printf("dest:");
+	debug("dest:");
 	for (i = 0; i < sec->num_sides; i++) {
-		printf(" %hx", sec->destination_sector[i]);
+		debug(" %hx", sec->destination_sector[i]);
 	}
-	printf("\n");
+	debug("\n");
 }
 
 /* TODO: draw all sectors visible to player's camera */
@@ -509,6 +658,8 @@ static void parse_args(int argc, char **argv)
 			}
 		} else if (!strcmp(cur, "-verbose")) {
 			config.verbose = true;
+		} else if (!strcmp(cur, "-debug")) {
+			config.debug = true;
 		} else if (!strcmp(cur, "-vsync")) {
 			config.use_vsync = true;
 		} else if (!strcmp(cur, "-novsync") ||
@@ -546,6 +697,9 @@ int main(int argc, char **argv)
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 
 	if (config.verbose) {
+		SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
+		warn("Using verbose logs.\n");
+	} else if (config.debug) {
 		SDL_LogSetAllPriority(SDL_LOG_PRIORITY_DEBUG);
 		warn("Using debugging logs.\n");
 	} else {
@@ -592,6 +746,10 @@ int main(int argc, char **argv)
 	if (!main_context)
 		die("SDL could not create GL context! (%s)\n", SDL_GetError());
 	setup_gl();
+
+	/* establish a world */
+	world = world_new();
+	assert(world != NULL);
 
 	/* put us in the center of the map of the 1st sector */
 	main_state->player_sector = 1;
