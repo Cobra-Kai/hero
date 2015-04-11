@@ -1179,7 +1179,7 @@ static int stbi__getn(stbi__context *s, stbi_uc *buffer, int n)
       return 0;
 }
 
-static int stbi__get16be(stbi__context *s)
+static unsigned stbi__get16be(stbi__context *s)
 {
    int z = stbi__get8(s);
    return (z << 8) + stbi__get8(s);
@@ -1191,7 +1191,7 @@ static stbi__uint32 stbi__get32be(stbi__context *s)
    return (z << 16) + stbi__get16be(s);
 }
 
-static int stbi__get16le(stbi__context *s)
+static unsigned stbi__get16le(stbi__context *s)
 {
    int z = stbi__get8(s);
    return z + (stbi__get8(s) << 8);
