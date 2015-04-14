@@ -2,10 +2,12 @@
  * Copyright © 2015 Jon Mayo <jon@rm-f.net>
  */
 #include <assert.h>
-#include <stdlib.h>
+#include <limits.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <math.h>
+#include <stdlib.h>
+#include <strings.h> /* for ffs() */
 #define GL_GLEXT_PROTOTYPES
 #include <SDL.h>
 #include <GL/gl.h>
@@ -97,6 +99,7 @@ struct sector_vertex {
 };
 
 struct map_sector {
+	unsigned sector_number;
 	GLfloat floor_height, ceil_height;
 	unsigned num_sides;
 	/* must be in counter-clockwise order */
@@ -110,6 +113,7 @@ struct map_sector {
 const struct map_sector *sector_get(unsigned num)
 {
 	static const struct map_sector dummy_sector0 = {
+		.sector_number = 0,
 		.floor_height = 0.0,
 		.ceil_height = 2.0,
 		.num_sides = 4,
@@ -124,6 +128,7 @@ const struct map_sector *sector_get(unsigned num)
 		.color = { 0, 1, 2, 3 },
 	};
 	static const struct map_sector dummy_sector1 = {
+		.sector_number = 1,
 		.floor_height = 0.0,
 		.ceil_height = 2.0,
 		.num_sides = 4,
@@ -162,9 +167,17 @@ static void sector_find_center(const struct map_sector *sec, GLdouble *x, GLdoub
 		*y = total_y / sec->num_sides;
 }
 
+/* compiled world sector */
+struct wsector {
+	GLuint display_list;
+};
+
 struct world {
 	unsigned num_textures;
 	GLuint *tex_ids;
+	struct wsector *sectors;
+	unsigned num_sectors;
+	unsigned max_sectors; /* allocated sectors */
 };
 
 struct world *world_new(void)
@@ -203,10 +216,9 @@ struct world *world_new(void)
 	return world;
 }
 
-/** MVC: View - take the model and show it **/
-
-/* draw one sector */
-static void sector_draw(struct game_state *state, const struct map_sector *sec, int ttl)
+/* draw one sector
+ * set ttl=0 to only draw this sector */
+static void sector_gen_visible(const struct map_sector *sec, int ttl)
 {
 	/* limit our depth */
 	if (ttl < 0)
@@ -264,8 +276,9 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec, 
 			glTexCoord2f(0.0, floor_height);
 			glVertex3f(cur->x, floor_height, -cur->y);
 			glEnd();
-			glEnable(GL_TEXTURE_2D);
-		} else {
+			glBindTexture(GL_TEXTURE_2D, 0);
+			glDisable(GL_TEXTURE_2D);
+		} else if (ttl > 0) { /* only recurse if ttl > 0 */
 			// debug("portal %d = %hu\n", i, destination_sector);
 			const struct map_sector *newsec =
 				sector_get(destination_sector);
@@ -273,9 +286,65 @@ static void sector_draw(struct game_state *state, const struct map_sector *sec, 
 			// TODO: optimize with a scissor test of the wall's bbox
 			// TODO: add additional modelview matrix
 			/* recurse into the portal */
-			sector_draw(state, newsec, ttl - 1);
+			sector_gen_visible(newsec, ttl - 1);
 		}
 		last = cur;
+	}
+}
+
+/* add sector to world */
+static int world_sector_add(struct world *world, unsigned n,
+	const struct map_sector *sec)
+{
+	if (n > INT_MAX / 2)
+		return -1; /* the formula below can't handle large n */
+	if (n >= world->max_sectors) {
+		unsigned newmax = 1U << (ffs(n) + 1);
+		struct wsector *newsec = realloc(world->sectors,
+			sizeof(*newsec) * newmax);
+		if (!newsec)
+			return -1;
+		/* clear from old max to new max */
+		memset(newsec + world->max_sectors, 0,
+			sizeof(*newsec) * (newmax - world->max_sectors));
+		/* done, we can now save the entries */
+		world->sectors = newsec;
+		world->max_sectors = newmax;
+	}
+
+	// TODO: write the slot
+	struct wsector *wsec = &world->sectors[n];
+	wsec->display_list = glGenLists(1);
+	glNewList(wsec->display_list, GL_COMPILE);
+	sector_gen_visible(sec, 0);
+	glEndList();
+
+	return 0; /* success */
+}
+
+/** MVC: View - take the model and show it **/
+
+/* draw one sector */
+static void sector_draw(struct game_state *state, const struct map_sector *sec, int ttl)
+{
+	unsigned i;
+	/* limit our depth */
+	if (ttl < 0)
+		return;
+	if (!sec)
+		return; /* TODO: maybe draw some empty void? */
+	/* draw the entire room */
+	glCallList(world->sectors[sec->sector_number].display_list);
+	/* find any portals for this room and draw them */
+	for (i = 0; i < sec->num_sides; i++) {
+		unsigned short destination_sector = sec->destination_sector[i];
+
+		/* only recurse if ttl > 0 */
+		if (destination_sector != SECTOR_NONE && ttl > 0) {
+			const struct map_sector *newsec =
+				sector_get(destination_sector);
+			sector_draw(state, newsec, ttl - 1);
+		}
 	}
 }
 
@@ -685,6 +754,10 @@ int main(int argc, char **argv)
 	/* establish a world */
 	world = world_new();
 	assert(world != NULL);
+
+	// TODO: replace this with some kind of map loading routine
+	world_sector_add(world, 0, sector_get(0));
+	world_sector_add(world, 1, sector_get(1));
 
 	/* put us in the center of the map of the 1st sector */
 	main_state->player_sector = 1;
