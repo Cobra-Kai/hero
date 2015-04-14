@@ -249,6 +249,38 @@ static void sector_gen_visible(const struct map_sector *sec, int ttl)
 	};
 #endif
 
+	/* draw floor and ceiling */
+	// TODO: floor and ceiling could be portals too...
+
+	/* draw floor */
+	glBindTexture(GL_TEXTURE_2D, world->tex_ids[0]);
+	glEnable(GL_TEXTURE_2D);
+	if (sec->num_sides > 2) { /* sector must be a real polygon */
+		glBegin(GL_TRIANGLE_FAN);
+		/* this moves in counter-clockwise order */
+		for (i = 0; i < sec->num_sides; i++) {
+			const struct sector_vertex *cur = &sec->sides_xy[i];
+			glTexCoord2f(cur->x, cur->y);
+			glVertex3f(cur->x, floor_height, -cur->y);
+		}
+		glEnd();
+	}
+	/* draw ceiling */
+	glBindTexture(GL_TEXTURE_2D, world->tex_ids[1]);
+	glEnable(GL_TEXTURE_2D);
+	if (sec->num_sides > 2) { /* sector must be a real polygon */
+		glBegin(GL_TRIANGLE_FAN);
+		/* this moves in a clock-wise order */
+		for (i = sec->num_sides; i-- > 0; ) {
+			const struct sector_vertex *cur = &sec->sides_xy[i];
+			glTexCoord2f(cur->x, cur->y);
+			glVertex3f(cur->x, ceil_height, -cur->y);
+		}
+		glEnd();
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	/* draw each wall */
 	for (i = 0; i < sec->num_sides; i++) {
 		const struct sector_vertex *cur = &sec->sides_xy[i];
 		unsigned short destination_sector = sec->destination_sector[i];
@@ -285,6 +317,7 @@ static void sector_gen_visible(const struct map_sector *sec, int ttl)
 			/* let the depth buffer mask off the room */
 			// TODO: optimize with a scissor test of the wall's bbox
 			// TODO: add additional modelview matrix
+			// TODO: draw front and back with gluNewTess()
 			/* recurse into the portal */
 			sector_gen_visible(newsec, ttl - 1);
 		}
