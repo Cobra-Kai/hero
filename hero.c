@@ -480,6 +480,21 @@ static void game_paint(void)
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
 	glShadeModel(GL_SMOOTH);
+	// glFrontFace(GL_CCW);
+
+	if (state->lighting) {
+		glEnable(GL_LIGHTING);
+		glEnable(GL_LIGHT0);
+		GLfloat light_ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+		GLfloat light_diffuse[] = { 0.8f, 0.8f, 0.8, 1.0f };
+		GLfloat light_specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+		GLfloat light_position[] = { -1.5f, 1.0f, -4.0f, 1.0f };
+		// Assign created components to GL_LIGHT0
+		glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+		glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+		glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+		glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+	}
 
 	/* setup projection matrix */
 	glMatrixMode(GL_PROJECTION);
@@ -496,6 +511,16 @@ static void game_paint(void)
 	glTranslatef(-state->player_x, -state->player_height - state->player_z,
 		state->player_y);
 	/* draw up to 10 sectors deep */
+	if (state->lighting) {
+		GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+		GLfloat mat_diffuse[] = { 0.8, 0.8, 0.8, 1.0 };
+		GLfloat mat_ambient[] = { 1.0, 1.0, 1.0, 1.0 };
+		GLfloat mat_shininess[] = { 0.0 };
+		glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+		glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+		glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+		glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+	}
 	glColor4f(1.0, 1.0, 1.0, 0.0);
 	sector_draw(state, sector_get(state->player_sector), 10);
 
@@ -505,17 +530,32 @@ static void game_paint(void)
 		/* Some test code to drop a teapot down, it's quite ugly */
 		glLoadIdentity();
 		GLdouble teapot_x, teapot_y;
-		sector_find_center(sector_get(state->player_sector),
-			&teapot_x, &teapot_y);
+		sector_find_center(sector_get(0), &teapot_x, &teapot_y);
 		glRotatef(state->player_tilt, -1.0, 0.0, 0.0);
 		glRotatef(state->player_facing, 0.0, 1.0, 0.0);
 		glTranslatef(teapot_x - state->player_x,
 			-state->player_height - state->player_z,
 			-teapot_y + state->player_y);
 		glScalef(0.25, 0.25, 0.25);
-		glColor3f(0.8, 0.8, 0.0);
+
+		if (state->lighting) {
+			GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+			GLfloat mat_diffuse[] = { 0.0, 1.0, 1.0, 1.0 };
+			GLfloat mat_ambient[] = { 1.0, 1.0, 0.0, 1.0 };
+			GLfloat mat_shininess[] = { 50.0 };
+			glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+			glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+			glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+			glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+		} else {
+			glColor3f(0.8, 0.8, 0.0);
+		}
+
 		model_draw(world->models[0]);
 	}
+
+	glDisable(GL_LIGHTING);
+	glDisable(GL_LIGHT0);
 }
 
 /** MVC: Controller - process inputs and alter the model over time. **/
@@ -584,9 +624,10 @@ static void game_process_key(bool down, SDL_Keysym keysym, SDL_Window *win)
 		}
 		break;
 #endif
-	/* turn lighting on */
+	/* toggle lighting on/off */
 	case SDLK_l:
-		state->lighting = true;
+		if (down)
+			state->lighting ^= true;
 		break;
 	}
 }
@@ -860,6 +901,8 @@ int main(int argc, char **argv)
 	main_state->win_w = width;
 	main_state->win_h = height;
 	SDL_SetWindowData(main_window, "game", main_state);
+
+	main_state->lighting = true; /* use L to toggle on/off */
 
 	/* Configure the player gamepad */
 	if (SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt") == -1)
