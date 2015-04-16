@@ -9,6 +9,6 @@ PKG_SEARCH_MODULE (SDL2 REQUIRED sdl2)
 INCLUDE_DIRECTORIES (${SDL2_INCLUDE_DIRS})
 find_package (OpenGL REQUIRED)
 
-add_executable (hero hero.c logging.c texture.c)
+add_executable (hero hero.c logging.c texture.c model.c objloader.c modeldraw.c)
 TARGET_LINK_LIBRARIES (hero ${SDL2_LIBRARIES} ${OPENGL_LIBRARIES})
 

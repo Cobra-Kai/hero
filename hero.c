@@ -2,12 +2,12 @@
  * Copyright © 2015 Jon Mayo <jon@rm-f.net>
  */
 #include <assert.h>
+#include <errno.h>
 #include <limits.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <strings.h> /* for ffs() */
 #define GL_GLEXT_PROTOTYPES
 #include <SDL.h>
 #include <GL/gl.h>
@@ -15,6 +15,9 @@
 #include <GL/glu.h>
 #include "logging.h"
 #include "texture.h"
+#include "model.h"
+#include "objloader.h"
+#include "modeldraw.h"
 
 #define ARRAY_SIZE(a) (sizeof (a) / sizeof *(a))
 
@@ -36,6 +39,8 @@ struct game_state {
 	unsigned player_sector;
 	Uint32 last_tick;
 	bool text_input;
+	/** debug options **/
+	bool lighting;
 	/** player input **/
 	struct act {
 		bool up, down, left, right;
@@ -170,14 +175,28 @@ static void sector_find_center(const struct map_sector *sec, GLdouble *x, GLdoub
 /* compiled world sector */
 struct wsector {
 	GLuint display_list;
+	char pad[64];
+};
+
+/* an entity that moves in the world */
+struct sprite {
+	GLdouble x, y, z;
+	// TODO: use a matrix so the model can have an orientation
+	unsigned model_num;
 };
 
 struct world {
 	unsigned num_textures;
 	GLuint *tex_ids;
+	/* compiled sectors */
 	struct wsector *sectors;
-	unsigned num_sectors;
 	unsigned max_sectors; /* allocated sectors */
+	/* models that can be referenced by sprites */
+	struct model **models;
+	unsigned max_models; /* allocated models */
+	/* entities in the world */
+	struct sprite *sprites;
+	unsigned max_sprites; /* allocated sprites */
 };
 
 struct world *world_new(void)
@@ -325,27 +344,54 @@ static void sector_gen_visible(const struct map_sector *sec, int ttl)
 	}
 }
 
+/* ptr must be a pointer to a pointer. void**, int**, etc. */
+int grow(void *ptr, unsigned *max, unsigned min, size_t elem)
+{
+	/* the formula below can't handle large min. */
+	if (min > INT_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	size_t old_size = *max * elem;
+	size_t new_size = min * elem;
+
+	/* round up to next power of 2 (limited to 32-bits) */
+	new_size--;
+	new_size |= new_size >> 1;
+	new_size |= new_size >> 2;
+	new_size |= new_size >> 4;
+	new_size |= new_size >> 8;
+	new_size |= new_size >> 16;
+	new_size++;
+
+	unsigned tmpmax = new_size / elem;
+	new_size = tmpmax * elem;
+	if (new_size <= old_size)
+		return 0; /* no need to grow this one */
+
+	void *p = realloc(*(void**)ptr, new_size);
+	if (!p)
+		return -1;
+	memset((char*)p + old_size, 0, new_size - old_size);
+	*max = tmpmax;
+	*(void**)ptr = p;
+	return 0;
+}
+
 /* add sector to world */
 static int world_sector_add(struct world *world, unsigned n,
 	const struct map_sector *sec)
 {
-	if (n > INT_MAX / 2)
-		return -1; /* the formula below can't handle large n */
-	if (n >= world->max_sectors) {
-		unsigned newmax = 1U << (ffs(n) + 1);
-		struct wsector *newsec = realloc(world->sectors,
-			sizeof(*newsec) * newmax);
-		if (!newsec)
-			return -1;
-		/* clear from old max to new max */
-		memset(newsec + world->max_sectors, 0,
-			sizeof(*newsec) * (newmax - world->max_sectors));
-		/* done, we can now save the entries */
-		world->sectors = newsec;
-		world->max_sectors = newmax;
+	int e = grow(&world->sectors, &world->max_sectors,
+		n + 1, sizeof(*world->sectors));
+	if (e) {
+		error("Unable to allocate sector!\n");
+		return -1;
 	}
+	assert(world->sectors != NULL);
+	assert(world->max_sectors > n);
 
-	// TODO: write the slot
 	struct wsector *wsec = &world->sectors[n];
 	wsec->display_list = glGenLists(1);
 	glNewList(wsec->display_list, GL_COMPILE);
@@ -353,6 +399,33 @@ static int world_sector_add(struct world *world, unsigned n,
 	glEndList();
 
 	return 0; /* success */
+}
+
+static int world_model_add(struct world *world, unsigned n, const char *filename)
+{
+	int e = grow(&world->models, &world->max_models,
+		n + 1, sizeof(*world->models));
+	if (e) {
+		error("Unable to allocate model!\n");
+		return -1;
+	}
+
+	assert(world->models != NULL);
+	assert(world->max_models > n);
+	if (world->models[n]) {
+		warn("Refusing to overwrite model in slot #%u\n", n);
+		return -1;
+	}
+
+	struct model *model = obj_load(filename);
+	if (!model) {
+		error("Unable to load model \"%s\" into slot #%u\n",
+			filename, n);
+		return -1;
+	}
+	world->models[n] = model;
+	info("model slot #%u:%s\n", n, filename);
+	return 0;
 }
 
 /** MVC: View - take the model and show it **/
@@ -406,6 +479,7 @@ static void game_paint(void)
 	glDepthFunc(GL_LESS);
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
+	glShadeModel(GL_SMOOTH);
 
 	/* setup projection matrix */
 	glMatrixMode(GL_PROJECTION);
@@ -422,7 +496,26 @@ static void game_paint(void)
 	glTranslatef(-state->player_x, -state->player_height - state->player_z,
 		state->player_y);
 	/* draw up to 10 sectors deep */
+	glColor4f(1.0, 1.0, 1.0, 0.0);
 	sector_draw(state, sector_get(state->player_sector), 10);
+
+	/* draw a teapot */
+	debug("max_models=%d\n", world->max_models);
+	if (world->max_models > 0) {
+		/* Some test code to drop a teapot down, it's quite ugly */
+		glLoadIdentity();
+		GLdouble teapot_x, teapot_y;
+		sector_find_center(sector_get(state->player_sector),
+			&teapot_x, &teapot_y);
+		glRotatef(state->player_tilt, -1.0, 0.0, 0.0);
+		glRotatef(state->player_facing, 0.0, 1.0, 0.0);
+		glTranslatef(teapot_x - state->player_x,
+			-state->player_height - state->player_z,
+			-teapot_y + state->player_y);
+		glScalef(0.25, 0.25, 0.25);
+		glColor3f(0.8, 0.8, 0.0);
+		model_draw(world->models[0]);
+	}
 }
 
 /** MVC: Controller - process inputs and alter the model over time. **/
@@ -491,6 +584,10 @@ static void game_process_key(bool down, SDL_Keysym keysym, SDL_Window *win)
 		}
 		break;
 #endif
+	/* turn lighting on */
+	case SDLK_l:
+		state->lighting = true;
+		break;
 	}
 }
 
@@ -791,6 +888,15 @@ int main(int argc, char **argv)
 	// TODO: replace this with some kind of map loading routine
 	world_sector_add(world, 0, sector_get(0));
 	world_sector_add(world, 1, sector_get(1));
+
+	world_model_add(world, 0, "assets/teapot.obj");
+	/*
+	world_model_add(world, 1, "assets/tetrahedron.obj");
+	world_model_add(world, 2, "assets/cube.obj");
+	world_model_add(world, 3, "assets/octahedron.obj");
+	world_model_add(world, 4, "assets/dodecahedron.obj");
+	world_model_add(world, 5, "assets/icosahedron.obj");
+	*/
 
 	/* put us in the center of the map of the 1st sector */
 	main_state->player_sector = 1;
