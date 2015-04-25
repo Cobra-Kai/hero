@@ -12,6 +12,13 @@
 #include "model.h"
 #include "modeldraw.h"
 
+static void cross_product(GLfloat c[3], GLfloat a[3], GLfloat b[3])
+{
+	c[0] = a[1] * b[2] - a[2] * b[1];
+	c[1] = a[2] * b[0] - a[1] * b[2];
+	c[2] = a[0] * b[1] - a[1] * b[0];
+}
+
 static int object_draw(struct object *obj, unsigned nr_vertex,
 	GLfloat (*vertex)[3])
 {
@@ -25,17 +32,24 @@ static int object_draw(struct object *obj, unsigned nr_vertex,
 	}
 
 	int f;
+	glEnable(GL_NORMALIZE);
 	for (f = 0; f < obj->nr_face; f++) {
 		glBegin(GL_TRIANGLES);
 		unsigned a = obj->face[f][0];
 		unsigned b = obj->face[f][1];
 		unsigned c = obj->face[f][2];
 		assert(a < nr_vertex && b < nr_vertex && c < nr_vertex);
+		GLfloat normal[3];
+		cross_product(normal, vertex[a], vertex[b]);
+		glNormal3fv(normal);
 		glVertex3fv(vertex[a]);
+		glNormal3fv(normal);
 		glVertex3fv(vertex[b]);
+		glNormal3fv(normal);
 		glVertex3fv(vertex[c]);
 		glEnd();
 	}
+	glDisable(GL_NORMALIZE);
 
 	return 0;
 }

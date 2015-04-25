@@ -479,8 +479,8 @@ static void game_paint(void)
 	glDepthFunc(GL_LESS);
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
 	glShadeModel(GL_SMOOTH);
-	// glFrontFace(GL_CCW);
 
 	if (state->lighting) {
 		glEnable(GL_LIGHTING);
@@ -517,14 +517,16 @@ static void game_paint(void)
 		-state->player_y);
 	/* draw up to 10 sectors deep */
 	if (state->lighting) {
-		GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+		GLfloat mat_ambient[] = { 0.3, 0.3, 0.3, 1.0 };
 		GLfloat mat_diffuse[] = { 0.8, 0.8, 0.8, 1.0 };
-		GLfloat mat_ambient[] = { 1.0, 1.0, 1.0, 1.0 };
-		GLfloat mat_shininess[] = { 0.0 };
+		GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+		GLfloat mat_emission[] = { 0.0, 0.0, 0.0, 0.0 };
+		GLfloat mat_shininess = 50.0;
 		glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 		glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
 		glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
-		glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+		glMaterialfv(GL_FRONT, GL_EMISSION, mat_emission);
+		glMaterialf(GL_FRONT, GL_SHININESS, mat_shininess);
 	}
 	glColor4f(1.0, 1.0, 1.0, 0.0);
 	sector_draw(state, sector_get(state->player_sector), 10);
@@ -539,24 +541,34 @@ static void game_paint(void)
 		glRotatef(state->player_tilt, -1.0, 0.0, 0.0);
 		glRotatef(state->player_facing, 0.0, 1.0, 0.0);
 		glTranslatef(teapot_x - state->player_x,
-			-state->player_height - state->player_z,
+			-state->player_height / 2 - state->player_z,
 			teapot_y - state->player_y);
 		glScalef(0.25, 0.25, 0.25);
 
 		if (state->lighting) {
 			GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
-			GLfloat mat_diffuse[] = { 0.0, 1.0, 1.0, 1.0 };
-			GLfloat mat_ambient[] = { 1.0, 1.0, 0.0, 1.0 };
-			GLfloat mat_shininess[] = { 50.0 };
+			GLfloat mat_diffuse[] = { 0.9, 0.9, 0.2, 1.0 };
+			GLfloat mat_ambient[] = { 0.9, 0.9, 0.2, 1.0 };
+			GLfloat mat_emission[] = { 0.0, 0.0, 0.0, 1.0 };
+			GLfloat mat_shininess = 50.0;
 			glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 			glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
 			glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
-			glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+			glMaterialfv(GL_FRONT, GL_EMISSION, mat_emission);
+			glMaterialf(GL_FRONT, GL_SHININESS, mat_shininess);
 		} else {
-			glColor3f(0.8, 0.8, 0.0);
+			glColor3f(1.0, 1.0, 0.0);
 		}
 
+#if 1 /* teapot */
 		model_draw(world->models[0]);
+#else /* sphere */
+		GLUquadricObj *quadric = gluNewQuadric();
+		gluQuadricNormals(quadric, GLU_SMOOTH);
+		gluQuadricDrawStyle(quadric, GLU_FILL);
+		gluSphere(quadric, .5, 36, 18);
+		gluDeleteQuadric(quadric);
+#endif
 	}
 
 	glDisable(GL_LIGHTING);
@@ -950,6 +962,7 @@ int main(int argc, char **argv)
 	main_state->player_sector = 1;
 	sector_find_center(sector_get(main_state->player_sector),
 		&main_state->player_x, &main_state->player_y);
+	main_state->player_facing = 180.0;
 	main_state->player_height = 1.0;
 
 	/* print the starting sector */
