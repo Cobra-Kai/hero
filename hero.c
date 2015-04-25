@@ -280,7 +280,7 @@ static void sector_gen_visible(const struct map_sector *sec, int ttl)
 		for (i = 0; i < sec->num_sides; i++) {
 			const struct sector_vertex *cur = &sec->sides_xy[i];
 			glTexCoord2f(cur->x, cur->y);
-			glVertex3f(cur->x, floor_height, -cur->y);
+			glVertex3f(cur->x, floor_height, cur->y);
 		}
 		glEnd();
 	}
@@ -293,7 +293,7 @@ static void sector_gen_visible(const struct map_sector *sec, int ttl)
 		for (i = sec->num_sides; i-- > 0; ) {
 			const struct sector_vertex *cur = &sec->sides_xy[i];
 			glTexCoord2f(cur->x, cur->y);
-			glVertex3f(cur->x, ceil_height, -cur->y);
+			glVertex3f(cur->x, ceil_height, cur->y);
 		}
 		glEnd();
 	}
@@ -319,13 +319,13 @@ static void sector_gen_visible(const struct map_sector *sec, int ttl)
 			GLfloat length = sqrt(x*x + y*y);
 			/* draw simple repeating texture coordinates for a wall texture */
 			glTexCoord2f(length, ceil_height);
-			glVertex3f(last->x, ceil_height, -last->y);
+			glVertex3f(last->x, ceil_height, last->y);
 			glTexCoord2f(0.0, ceil_height);
-			glVertex3f(cur->x, ceil_height, -cur->y);
+			glVertex3f(cur->x, ceil_height, cur->y);
 			glTexCoord2f(length, floor_height);
-			glVertex3f(last->x, floor_height, -last->y);
+			glVertex3f(last->x, floor_height, last->y);
 			glTexCoord2f(0.0, floor_height);
-			glVertex3f(cur->x, floor_height, -cur->y);
+			glVertex3f(cur->x, floor_height, cur->y);
 			glEnd();
 			glBindTexture(GL_TEXTURE_2D, 0);
 			glDisable(GL_TEXTURE_2D);
@@ -499,8 +499,13 @@ static void game_paint(void)
 	/* setup projection matrix */
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
+
+	int width, height;
+	SDL_GetWindowSize(win, &width, &height);
+	double aspect_root = sqrt((double)width / (double)height);
 	double nearest = 0.125; /* how close you can get before it's clipped. */
-	glFrustum(nearest, -nearest, -nearest, nearest, nearest, 1000.0);
+	glFrustum(-nearest * aspect_root, nearest * aspect_root,
+		-nearest / aspect_root, nearest / aspect_root, nearest, 1000.0);
 
 	/* setup world coordinates */
 	glMatrixMode(GL_MODELVIEW);
@@ -509,7 +514,7 @@ static void game_paint(void)
 	glRotatef(state->player_tilt, -1.0, 0.0, 0.0);
 	glRotatef(state->player_facing, 0.0, 1.0, 0.0);
 	glTranslatef(-state->player_x, -state->player_height - state->player_z,
-		state->player_y);
+		-state->player_y);
 	/* draw up to 10 sectors deep */
 	if (state->lighting) {
 		GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
@@ -535,7 +540,7 @@ static void game_paint(void)
 		glRotatef(state->player_facing, 0.0, 1.0, 0.0);
 		glTranslatef(teapot_x - state->player_x,
 			-state->player_height - state->player_z,
-			-teapot_y + state->player_y);
+			teapot_y - state->player_y);
 		glScalef(0.25, 0.25, 0.25);
 
 		if (state->lighting) {
@@ -746,8 +751,8 @@ static void game_process_ticks(SDL_Window *win)
 
 	double theta = state->player_facing * M_PI / 180.0;
 	double r = elapsed / player_speed;
-	double ax = r * sin(theta);
-	double ay = r * cos(theta);
+	double ax = r * cos(theta + M_PI / 2);
+	double ay = r * sin(theta + M_PI / 2);
 
 	/*
 	SDL_Log("key state: up=%d down=%d left=%d right=%d\n",
@@ -756,30 +761,30 @@ static void game_process_ticks(SDL_Window *win)
 	*/
 	// TODO: handle wall collision
 	if (state->act.down) {
-		state->player_x -= ax;
-		state->player_y -= ay;
-	}
-	if (state->act.up) {
 		state->player_x += ax;
 		state->player_y += ay;
 	}
+	if (state->act.up) {
+		state->player_x -= ax;
+		state->player_y -= ay;
+	}
 	if (state->act.left) {
-		double ax_left = r * sin(theta + M_PI / 2);
-		double ay_left = r * cos(theta + M_PI / 2);
-		state->player_x += ax_left;
-		state->player_y += ay_left;
+		double ax_left = r * cos(theta);
+		double ay_left = r * sin(theta);
+		state->player_x -= ax_left;
+		state->player_y -= ay_left;
 	}
 	if (state->act.right) {
-		double ax_right = r * sin(theta - M_PI / 2);
-		double ay_right = r * cos(theta - M_PI / 2);
+		double ax_right = r * cos(theta);
+		double ay_right = r * sin(theta);
 		state->player_x += ax_right;
 		state->player_y += ay_right;
 	}
 	if (state->act.turn_left) {
-		state->player_facing += elapsed / player_turn_speed;
+		state->player_facing -= elapsed / player_turn_speed;
 	}
 	if (state->act.turn_right) {
-		state->player_facing -= elapsed / player_turn_speed;
+		state->player_facing += elapsed / player_turn_speed;
 	}
 	if (state->act.fly_up) {
 		state->player_z += r;
