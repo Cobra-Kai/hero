@@ -33,6 +33,8 @@ static int object_draw(struct object *obj, unsigned nr_vertex,
 
 	int f;
 	glEnable(GL_NORMALIZE);
+	/* calculate normals if none are present in the model */
+	unsigned has_normals = obj->has_normals;
 	for (f = 0; f < obj->nr_face; f++) {
 		glBegin(GL_TRIANGLES);
 		unsigned a = obj->face[f][0];
@@ -40,12 +42,22 @@ static int object_draw(struct object *obj, unsigned nr_vertex,
 		unsigned c = obj->face[f][2];
 		assert(a < nr_vertex && b < nr_vertex && c < nr_vertex);
 		GLfloat normal[3];
-		cross_product(normal, vertex[a], vertex[b]);
-		glNormal3fv(normal);
+		if (!has_normals) {
+			/* the winding is swapped every other triangle */
+			if (f % 2) {
+				cross_product(normal, vertex[b], vertex[c]);
+			} else {
+				cross_product(normal, vertex[c], vertex[b]);
+			}
+		}
+		if (!has_normals)
+			glNormal3fv(normal);
 		glVertex3fv(vertex[a]);
-		glNormal3fv(normal);
+		if (!has_normals)
+			glNormal3fv(normal);
 		glVertex3fv(vertex[b]);
-		glNormal3fv(normal);
+		if (!has_normals)
+			glNormal3fv(normal);
 		glVertex3fv(vertex[c]);
 		glEnd();
 	}

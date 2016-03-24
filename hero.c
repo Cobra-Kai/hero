@@ -479,7 +479,6 @@ static void game_paint(void)
 	glDepthFunc(GL_LESS);
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK);
 	glShadeModel(GL_SMOOTH);
 
 	if (state->lighting) {

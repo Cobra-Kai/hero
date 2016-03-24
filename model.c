@@ -38,9 +38,13 @@ struct object *model_object_create(struct model *mdl, const char *tag,
 	int use_global_vertex)
 {
 	struct object *tmp;
-	tmp = realloc(mdl->object, sizeof *mdl->object * (mdl->nr_object + 1));
+	unsigned old_size = mdl->nr_object;
+	unsigned new_size = mdl->nr_object + 1;
+	tmp = realloc(mdl->object, sizeof *mdl->object * new_size);
 	if (!tmp)
 		return 0;
+	if (old_size < new_size)
+		memset(tmp + old_size, 0, sizeof *mdl->object * (new_size - old_size));
 	mdl->object = tmp;
 	tmp = mdl->object + mdl->nr_object++;
 	tmp->tag = tag ? strdup(tag) : 0;
