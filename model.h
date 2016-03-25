@@ -1,5 +1,4 @@
 /* model.h : allocates and manipulates a model structure */
-/* 3dsloader.c : a small library to load a subset of the 3DS model format */
 /* This software is PUBLIC DOMAIN as of January 2006. No copyright is claimed.
  * - Jon Mayo <jmayo@rm-f.net> */
 #ifndef MODEL_H
@@ -8,6 +7,7 @@
 struct object {
 	char *tag;
 	int global_vertex;
+	int has_normals;
 	int nr_vertex;
 	float (*vertex)[3];
 	int nr_face;
