@@ -596,25 +596,25 @@ static void game_process_key(bool down, SDL_Keysym keysym, SDL_Window *win)
 		state->act.look_down = down;
 		break;
 	case SDLK_UP:
-	case SDLK_e:
+	case SDLK_w:
 		state->act.up = down;
 		break;
 	case SDLK_DOWN:
-	case SDLK_d:
+	case SDLK_s:
 		state->act.down = down;
 		break;
-	case SDLK_w:
+	case SDLK_q:
 		state->act.left = down;
 		break;
-	case SDLK_r:
+	case SDLK_e:
 		state->act.right = down;
 		break;
 	case SDLK_LEFT:
-	case SDLK_s:
+	case SDLK_a:
 		state->act.turn_left = down;
 		break;
 	case SDLK_RIGHT:
-	case SDLK_f:
+	case SDLK_d:
 		state->act.turn_right = down;
 		break;
 	case SDLK_ESCAPE:
